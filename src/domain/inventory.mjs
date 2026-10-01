@@ -1,5 +1,10 @@
 import {DomainError, requiredText} from './validation.mjs';
 
+const normalized = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+export function searchMaterials(s, {query = '', category = ''}) {
+  return s.materials.filter(m => (!category || m.category === category) && normalized(m.name).includes(normalized(query)));
+}
+
 export const emptyState = () => ({materials:[], units:[], students:[], requests:[],
   confirmations:[], pickups:[], returns:[], movements:[]});
 export const availableUnits = (s,id) => s.units.filter(u => u.materialId===id && u.status==='available');

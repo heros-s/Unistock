@@ -10,7 +10,7 @@ export function createDemoState() {
     {id:'cartolina',name:'Cartolina',category:'consumable',measure:'unidade',quantity:12,codes:[]},
     {id:'lapis',name:'Lápis de cor',category:'consumable',measure:'caixa',quantity:3,codes:[]}
   ]) state=addMaterial(state,item);
-  state.students=[{id:'DEMO-ALUNO-1',name:'Ana Exemplo',course:'Design — Turma A'},
-    {id:'DEMO-ALUNO-2',name:'Bruno Exemplo',course:'Administração — Turma B'}];
+  state.students=[{id:'DEMO-ALUNO-1',name:'Ana Exemplo',course:'Design, Turma A'},
+    {id:'DEMO-ALUNO-2',name:'Bruno Exemplo',course:'Administração, Turma B'}];
   return state;
 }

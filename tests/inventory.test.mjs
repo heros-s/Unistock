@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {emptyState, addMaterial, availability} from '../src/domain/inventory.mjs';
+import {emptyState, addMaterial, availability, searchMaterials} from '../src/domain/inventory.mjs';
 import {createDemoState} from '../src/demo.mjs';
 
 const item = (changes = {}) => ({id:'m', name:'Notebook de demonstração',
@@ -30,4 +30,11 @@ test('saldo zero é permitido e cada demonstração é independente', () => {
   const first = createDemoState();
   first.materials.length = 0;
   assert.ok(createDemoState().materials.length > 0);
+});
+// Incluir searchMaterials no import de inventory.mjs.
+test('busca ignora acentos e espaços e combina categoria',()=>{
+  const state=createDemoState();
+  assert.deepEqual(searchMaterials(state,{query:' REGUA ',category:'reusable'}).map(m=>m.id),['regua']);
+  assert.equal(searchMaterials(state,{query:'régua',category:'consumable'}).length,0);
+  assert.equal(searchMaterials(state,{query:'inexistente',category:''}).length,0);
 });
