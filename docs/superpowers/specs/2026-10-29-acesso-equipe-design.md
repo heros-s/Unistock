@@ -20,7 +20,7 @@ Sucesso: sem sessão válida, nenhuma rota `#/equipe/...` é exibida; só e-mail
 
 - `src/auth.mjs`: único módulo que conhece o Supabase. Interface: `signUp({nome, sobrenome, email, senha})`, `signIn(email, senha)`, `signOut()`, `getSession()`, `onChange(callback)`. Carrega `@supabase/supabase-js` como módulo ESM por CDN.
 - `src/config.mjs`: URL do projeto e chave anônima (pública por design; a segurança vem do servidor).
-- `src/domain/auth-validation.mjs`: validações puras (campos obrigatórios, formato do e-mail, domínio, senha com no mínimo 8 caracteres, confirmação igual à senha), reutilizando `DomainError`.
+- `src/domain/auth-validation.mjs`: validações puras (campos obrigatórios, formato do e-mail, senha com no mínimo 8 caracteres, confirmação igual à senha), reutilizando `DomainError`. O cliente não valida domínio; isso é do servidor.
 - Guarda de rota em `src/main.mjs`: rota `#/equipe/...` sem sessão redireciona para `#/entrar`, guardando o destino para voltar após o login.
 - `scripts/serve.mjs`: incluir os módulos novos na lista de rotas.
 - Dados de demonstração continuam em memória. Quando forem para o banco, a Row Level Security usará esta autenticação.
@@ -39,9 +39,9 @@ Observação: o Supabase só aplica a regra a novos cadastros; contas criadas an
 ## Telas e fluxo
 
 - `#/entrar`: abas "Entrar" e "Criar conta", em português, com o padrão de formulário existente (mensagem junto ao campo, resumo de erros, dados digitados preservados).
-- Cadastro: nome, sobrenome (guardados em `user_metadata`), e-mail, senha, confirmar senha.
+- Cadastro: nome, sobrenome (guardados em `user_metadata`), e-mail, senha, confirmar senha. A validação do cliente confere só o formato do e-mail; a decisão de domínio e de exceção é do servidor (trigger), para não barrar os e-mails de exceção.
 - Após o cadastro: "Enviamos um link de confirmação para seu e-mail. Confirme para entrar." Sem sessão até a confirmação.
-- E-mail não permitido: mensagem "Este e-mail não tem permissão para acessar a área da equipe. Use o e-mail institucional." (o servidor também rejeita).
+- E-mail não permitido: mensagem "Este e-mail não tem permissão para acessar a área da equipe. Use o e-mail institucional." (rejeição do servidor, que chega ao cliente como erro genérico de cadastro e é traduzida para esta mensagem).
 - Credenciais inválidas ou e-mail não confirmado: mensagens distintas e sem revelar se o e-mail existe.
 - Cabeçalho da equipe: nome da pessoa e botão "Sair". O seletor "Alternar área" leva ao login quando não houver sessão.
 - Rodapé: trocar "Demonstração sem autenticação…" por texto que diga que só a área da equipe exige login e que os dados do protótipo continuam fictícios.
@@ -55,7 +55,7 @@ Observação: o Supabase só aplica a regra a novos cadastros; contas criadas an
 
 ## Testes
 
-- Unitários: validação (campos vazios, e-mail inválido, domínio, e-mail de exceção tratado pelo servidor e não pelo cliente, senha curta, confirmação diferente) e guarda de rota, com `auth` substituído por um duplo.
+- Unitários: validação (campos vazios, e-mail com formato inválido, senha curta, confirmação diferente; domínio e e-mails de exceção não são checados pelo cliente, e sim pelo servidor, cuja rejeição aparece como "Este e-mail não tem permissão…") e guarda de rota, com `auth` substituído por um duplo.
 - `tests/server.test.mjs` atualizado para as novas rotas.
 - Manual, com o projeto Supabase do usuário: cadastro com e-mail permitido e bloqueado, confirmação, login, logout, acesso direto a `#/equipe/resumo` sem sessão.
 

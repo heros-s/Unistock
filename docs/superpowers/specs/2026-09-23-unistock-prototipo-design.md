@@ -1,5 +1,7 @@
 # Unistock — desenho do protótipo das duas áreas
 
+> Nota: a premissa "sem autenticação" vale agora só para a área do aluno; ver [2026-10-29-acesso-equipe-design.md](2026-10-29-acesso-equipe-design.md).
+
 Status: desenho aprovado pelo usuário nesta conversa, após revisão da proposta. As decisões abaixo orientam o protótipo; não constituem políticas institucionais para uma versão operacional.
 
 ## Objetivo e limites
