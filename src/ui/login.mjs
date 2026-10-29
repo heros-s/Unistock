@@ -1,7 +1,7 @@
 import {el, icon, field, errorSummary, showError, heading, notice} from './dom.mjs';
 import {safeNext} from '../domain/access.mjs';
 
-export function renderLogin({route, auth, navigate}) {
+export function renderLogin({route, auth, navigate, onSignedIn = () => {}}) {
   const signup = route.params.get('aba') === 'cadastro';
   const next = route.params.get('next');
   const tabHref = tab => {
@@ -37,7 +37,7 @@ export function renderLogin({route, auth, navigate}) {
         form.replaceChildren(notice('Enviamos um link de confirmação para seu e-mail. Confirme para entrar.'));
         return;
       }
-      await auth.signIn(values);
+      onSignedIn(await auth.signIn(values));
       navigate(safeNext(next));
     } catch (error) {
       showError(form, error);
@@ -46,5 +46,7 @@ export function renderLogin({route, auth, navigate}) {
     }
   });
   return el('section', {}, heading('ÁREA DA EQUIPE', signup ? 'Criar conta' : 'Entrar',
-    'Somente a equipe precisa de login. O catálogo do aluno continua aberto.'), tabs, form);
+    'Somente a equipe precisa de login. O catálogo do aluno continua aberto.'),
+    route.params.get('aviso') === 'link-invalido' && notice('O link de confirmação expirou ou já foi usado. Entre com seu e-mail e senha ou crie a conta novamente.'),
+    tabs, form);
 }

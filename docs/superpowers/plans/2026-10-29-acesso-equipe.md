@@ -30,7 +30,7 @@
 - Falha ao carregar o Supabase (CDN fora do ar, sem rede): mensagem clara no login e a área da equipe continua bloqueada.
 - Senha com espaços nas pontas não é alterada (`trim` só no e-mail e nos nomes).
 - Duplo clique em "Criar conta" não envia duas requisições.
-- Sair estando em `#/equipe/...` leva ao login, sem deixar conteúdo da equipe na tela.
+- Sair estando em `#/equipe/...` leva ao catálogo do aluno, sem deixar conteúdo da equipe na tela.
 
 ---
 
@@ -102,7 +102,7 @@
   - `defaultLoadClient()` (exportada, não testada em Node): `import()` dinâmico do `@supabase/supabase-js` pelo CDN fixado e `createClient(SUPABASE_URL, SUPABASE_ANON_KEY)` de `config.mjs`.
   - `config.mjs` exporta `SUPABASE_URL` e `SUPABASE_ANON_KEY` com marcadores `'COLE_AQUI'`; `createAuth` falha com `DomainError('config', 'O acesso da equipe ainda não foi configurado.')` quando algum ainda for o marcador.
 - Mapeamento de erros (todos como `DomainError`, `field:'form'`), com estes textos exatos:
-  - signUp rejeitado pelo trigger (erro com `status===500` ou mensagem contendo `Database error`) → `'Este e-mail não tem permissão para acessar a área da equipe. Use o e-mail institucional.'`
+  - signUp rejeitado pelo trigger (erro com mensagem contendo `Database error`; um `status===500` sozinho não basta, pois "Error sending confirmation email" também é 500 e vira a mensagem genérica) → `'Este e-mail não tem permissão para acessar a área da equipe. Use o e-mail institucional.'`
   - signIn `Invalid login credentials` → `'E-mail ou senha incorretos.'`
   - signIn `Email not confirmed` → `'Confirme seu e-mail pelo link que enviamos antes de entrar.'`
   - falha ao carregar o cliente → `'Não foi possível conectar ao serviço de acesso. Verifique sua conexão e tente novamente.'`

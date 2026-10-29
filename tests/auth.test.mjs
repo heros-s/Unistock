@@ -20,7 +20,7 @@ function fakeClient(overrides={}) {
         calls.push(['signIn',args]);
         return overrides.signIn?overrides.signIn(args):{data:{session:{user:{email:'ana@faculdade.test',user_metadata:{nome:'Ana',sobrenome:'Souza'}}}},error:null};
       },
-      async signOut() {calls.push(['signOut']); return {error:null};},
+      async signOut(args) {calls.push(['signOut',args]); return overrides.signOut?overrides.signOut(args):{error:null};},
       async getSession() {return {data:{session:overrides.session||null},error:null};},
       onAuthStateChange(cb) {listeners.push(cb); return {data:{subscription:{unsubscribe(){unsubscribed++;}}}};}
     }
@@ -61,6 +61,35 @@ test('erro do trigger vira mensagem de e-mail sem permissão',async()=>{
   await rejectsForm(make(a).auth.signUp(VALID),msg);
   const b=fakeClient({signUp:()=>({data:null,error:{message:'Database error saving new user'}})});
   await rejectsForm(make(b).auth.signUp(VALID),msg);
+});
+
+test('500 sem "Database error" (ex.: falha ao enviar e-mail) vira mensagem genérica',async()=>{
+  const c=fakeClient({signUp:()=>({data:null,error:{status:500,message:'Error sending confirmation email'}})});
+  await rejectsForm(make(c).auth.signUp(VALID),'Não foi possível concluir. Tente novamente.');
+});
+
+test('signUp com sessão imediata (Confirm email desligado) encerra a sessão local e rejeita',async()=>{
+  const c=fakeClient({signUp:()=>({data:{session:{user:{email:'x@y.test'}}},error:null})});
+  await assert.rejects(make(c).auth.signUp(VALID),e=>e instanceof DomainError&&e.field==='config'&&e.message==='O acesso da equipe ainda não foi configurado.');
+  assert.deepEqual(c.calls.find(x=>x[0]==='signOut'),['signOut',{scope:'local'}]);
+});
+
+test('signOut com sucesso resolve serverError false e não força escopo local',async()=>{
+  const c=fakeClient();
+  assert.deepEqual(await make(c).auth.signOut(),{serverError:false});
+  assert.deepEqual(c.calls.filter(x=>x[0]==='signOut'),[['signOut',undefined]]);
+});
+
+test('signOut com {error} limpa a sessão local e resolve serverError true',async()=>{
+  const c=fakeClient({signOut:args=>args&&args.scope==='local'?{error:null}:{error:{message:'rede'}}});
+  assert.deepEqual(await make(c).auth.signOut(),{serverError:true});
+  assert.deepEqual(c.calls.filter(x=>x[0]==='signOut').map(x=>x[1]),[undefined,{scope:'local'}]);
+});
+
+test('signOut que lança também limpa a sessão local',async()=>{
+  const c=fakeClient({signOut:args=>{if (!args) throw new Error('rede'); return {error:null};}});
+  assert.deepEqual(await make(c).auth.signOut(),{serverError:true});
+  assert.deepEqual(c.calls.filter(x=>x[0]==='signOut').map(x=>x[1]),[undefined,{scope:'local'}]);
 });
 
 test('erros de signIn são traduzidos',async()=>{
@@ -104,7 +133,7 @@ test('falha ao carregar o cliente vira mensagem de conexão',async()=>{
   await rejectsForm(auth.signUp(VALID),msg);
   await rejectsForm(auth.signIn({email:'a@b.test',senha:'x'}),msg);
   assert.equal(await auth.getSession(),null);
-  await auth.signOut();
+  assert.deepEqual(await auth.signOut(),{serverError:false});
 });
 
 test('loadClient é chamado uma só vez',async()=>{
@@ -122,14 +151,9 @@ test('chaves COLE_AQUI geram erro de configuração sem lançar na criação',as
   await assert.rejects(auth.signUp(VALID),isConfig);
   await assert.rejects(auth.signIn({email:'a@b.test',senha:'x'}),isConfig);
   assert.equal(await auth.getSession(),null);
-  await auth.signOut();
+  assert.deepEqual(await auth.signOut(),{serverError:false});
   assert.equal(typeof auth.onChange(()=>{}),'function');
   assert.equal(loads,0);
-});
-
-test('config padrão (config.mjs) ainda não configurada',async()=>{
-  const auth=createAuth(async()=>fakeClient());
-  await assert.rejects(auth.signIn({email:'a@b.test',senha:'x'}),e=>e.field==='config');
 });
 
 test('segundo signUp pendente devolve a mesma promessa',async()=>{

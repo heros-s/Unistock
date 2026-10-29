@@ -5,12 +5,14 @@ import {renderTeam} from './ui/team.mjs';
 import {protocol} from './ui/shared.mjs';
 import {renderLogin} from './ui/login.mjs';
 import {createAuth, defaultLoadClient} from './auth.mjs';
-import {guardRoute, safeNext, sameSession} from './domain/access.mjs';
+import {guardRoute, safeNext, sameSession, parseAuthCallback} from './domain/access.mjs';
 
 const store = createStore();
 let studentId = 'DEMO-ALUNO-1';
 let flash = '';
 let session = null, loading = true;
+// Retorno do link de confirmação: o fragmento traz dados de autenticação, não uma rota.
+let callbackPending = parseAuthCallback(location.hash);
 const auth = createAuth(defaultLoadClient, {redirectTo:location.origin + location.pathname});
 const app = document.querySelector('#app');
 const navItems = {
@@ -30,12 +32,12 @@ function dispatch(command, payload) {
   return state;
 }
 function render(focus = true) {
-  const [pathname, search = ''] = (location.hash.slice(1) || '/aluno/catalogo').split('?');
+  const [pathname, search = ''] = (callbackPending ? '/' : location.hash.slice(1) || '/aluno/catalogo').split('?');
   const route = {path:pathname.split('/').filter(Boolean), params:new URLSearchParams(search)};
   const guard = guardRoute({path:route.path, session, loading});
   if (guard.action === 'redirect') { location.replace(guard.to); return; }
   if (route.path[0] === 'entrar' && session) { location.replace(safeNext(route.params.get('next'))); return; }
-  const waiting = guard.action === 'wait';
+  const waiting = guard.action === 'wait' || Boolean(callbackPending);
   const area = route.path[0] === 'equipe' ? 'equipe' : 'aluno';
   const personName = session ? `${session.nome} ${session.sobrenome}`.trim() : '';
   const state = store.getState();
@@ -59,10 +61,14 @@ function render(focus = true) {
       el('span',{className:'brand-mark','aria-hidden':true},'U'),el('span',{},'uni',el('strong',{},'stock'),el('small',{},'MATERIAIS QUE CONECTAM IDEIAS'))),
     area==='aluno'&&navigation,
     el('div',{className:'header-tools'},el('span',{className:'area-switch'},icon('users'),areaSelect),
-      el('span',{className:'avatar',role:'img','aria-label':area==='aluno'?student.name:(personName||'Equipe demonstrativa')},area==='aluno'?student.name[0]:(personName[0]||'E').toUpperCase()),
+      el('span',{className:'avatar',role:'img',title:area==='aluno'?student.name:(personName||'Equipe demonstrativa'),'aria-label':area==='aluno'?student.name:(personName||'Equipe demonstrativa')},area==='aluno'?student.name[0]:(personName[0]||'E').toUpperCase()),
+      area==='equipe'&&personName&&el('span',{className:'user-name'},personName),
       area==='equipe'&&session&&el('button',{type:'button',className:'signout-button',onclick:async()=>{
-        try { await auth.signOut(); } catch { /* a sessão local é descartada mesmo se o serviço falhar */ }
-        session=null;flash='';navigate('#/aluno/catalogo');
+        let result;
+        try { result = await auth.signOut(); } catch { result = {serverError:false}; }
+        session=null;
+        flash=result&&result.serverError?'Não foi possível encerrar a sessão no servidor. Ela foi removida deste navegador.':'';
+        navigate('#/aluno/catalogo');
       }},'Sair'),
       el('button',{type:'button',className:'menu-button','aria-label':'Abrir navegação','aria-controls':'main-nav','aria-expanded':'false',onclick:event=>{
         const open=event.currentTarget.getAttribute('aria-expanded')!=='true';event.currentTarget.setAttribute('aria-expanded',String(open));
@@ -78,7 +84,7 @@ function render(focus = true) {
   const content=waiting
     ? el('div',{className:'notice',role:'status'},icon('clock'),el('p',{},'Verificando acesso…'))
     : route.path[0]==='entrar'
-    ? renderLogin({route,auth,navigate})
+    ? renderLogin({route,auth,navigate,onSignedIn:next=>{session=next;loading=false;}})
     : !['aluno','equipe'].includes(route.path[0])
     ? empty('Página não encontrada','Volte ao catálogo para continuar.',linkButton('Ver catálogo','#/aluno/catalogo'))
     : area==='aluno'?renderStudent(context):renderTeam(context);
@@ -87,7 +93,7 @@ function render(focus = true) {
       area==='aluno'&&route.path[0]!=='entrar'&&el('div',{className:'person-switch'},el('label',{for:'person-select'},'Pessoa fictícia:'),personSelect)),
     flash&&el('div',{className:'success-message',role:'status'},icon('check'),el('span',{},flash)),content,
     el('footer',{className:'page-footer'},el('span',{},'Unistock · Compartilhar faz a diferença.'),
-      el('span',{},'Somente a área da equipe exige login. Os dados desta demonstração são fictícios e a seleção de pessoa do aluno não protege dados.')));
+      el('span',{},'Somente a área da equipe exige login, e ele apenas oculta as telas da equipe: não protege dados. Os dados desta demonstração são fictícios e a seleção de pessoa do aluno também não protege dados.')));
   flash='';
   app.replaceChildren(header,demoBar,area==='equipe'?el('div',{className:'team-layout'},
     el('aside',{className:'sidebar'},el('p',{className:'eyebrow'},'GESTÃO DE MATERIAIS'),navigation,
@@ -103,5 +109,12 @@ auth.onChange(next => {
   if (changed) render(false);
 });
 auth.getSession().then(current => { session = current; }, () => { session = null; })
-  .then(() => { loading = false; render(false); });
+  .then(() => {
+    loading = false;
+    const callback = callbackPending;
+    callbackPending = null;
+    // navigate sempre renderiza: o supabase-js limpa o fragmento com replaceState, que não dispara hashchange.
+    if (callback) navigate(session && callback.kind === 'success' ? '#/equipe/resumo' : callback.kind === 'error' ? '#/entrar?aviso=link-invalido' : '#/entrar');
+    else render(false);
+  });
 render(false);

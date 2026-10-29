@@ -29,7 +29,7 @@ function toSession(session) {
 function mapError(error,kind) {
   if (error instanceof DomainError) return error;
   const message=String((error&&error.message)||'');
-  if (kind==='signUp'&&((error&&error.status)===500||message.includes('Database error')))
+  if (kind==='signUp'&&message.includes('Database error'))
     return new DomainError('form',MSG.forbidden);
   if (kind==='signIn'&&message.includes('Invalid login credentials'))
     return new DomainError('form',MSG.credentials);
@@ -65,6 +65,11 @@ export function createAuth(loadClient=defaultLoadClient,{redirectTo,config={url:
       result=await client.auth.signUp({email,password:senha,options:{data:{nome,sobrenome},emailRedirectTo:redirectTo}});
     } catch (error) {throw mapError(error,'signUp');}
     if (result&&result.error) throw mapError(result.error,'signUp');
+    if (result&&result.data&&result.data.session) {
+      // "Confirm email" desligado no painel: sem a confirmação não há prova de posse do e-mail.
+      try {await client.auth.signOut({scope:'local'});} catch { /* melhor esforço */ }
+      throw new DomainError('config',MSG.config);
+    }
     return {needsConfirmation:true};
   }
 
@@ -88,8 +93,16 @@ export function createAuth(loadClient=defaultLoadClient,{redirectTo,config={url:
 
   async function signOut() {
     let client;
-    try {client=await getClient();} catch {return;}
-    try {await client.auth.signOut();} catch {throw new DomainError('form',MSG.generic);}
+    try {client=await getClient();} catch {return {serverError:false};}
+    let failed=false;
+    try {
+      const result=await client.auth.signOut();
+      failed=Boolean(result&&result.error);
+    } catch {failed=true;}
+    if (!failed) return {serverError:false};
+    // signOut não remove a sessão guardada quando o servidor falha; o escopo local a remove.
+    try {await client.auth.signOut({scope:'local'});} catch { /* melhor esforço */ }
+    return {serverError:true};
   }
 
   async function getSession() {

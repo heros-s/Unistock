@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {guardRoute, safeNext, loginUrl, sameSession} from '../src/domain/access.mjs';
+import {guardRoute, safeNext, loginUrl, sameSession, parseAuthCallback} from '../src/domain/access.mjs';
 
 const session={user:{id:'u1'}};
 
@@ -53,4 +53,13 @@ test('sameSession compara a identidade da sessão',()=>{
   assert.equal(sameSession(a,null),false);
   assert.equal(sameSession(a,{...a,nome:'Bia'}),false);
   assert.equal(sameSession(a,{...a,email:'b@exemplo.invalid'}),false);
+});
+
+test('parseAuthCallback reconhece o retorno do link de confirmação', () => {
+  for (const route of ['#/aluno/catalogo','#/entrar?next=x','','#','#/equipe/resumo',undefined,null]) {
+    assert.equal(parseAuthCallback(route),null);
+  }
+  assert.deepEqual(parseAuthCallback('#access_token=abc&refresh_token=d&type=signup'),{kind:'success'});
+  assert.deepEqual(parseAuthCallback('#error=access_denied&error_code=otp_expired&error_description=x'),{kind:'error'});
+  assert.deepEqual(parseAuthCallback('#error_code=otp_expired'),{kind:'error'});
 });
