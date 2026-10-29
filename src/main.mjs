@@ -3,10 +3,15 @@ import {el, icon, notice, empty, linkButton} from './ui/dom.mjs';
 import {renderStudent} from './ui/student.mjs';
 import {renderTeam} from './ui/team.mjs';
 import {protocol} from './ui/shared.mjs';
+import {renderLogin} from './ui/login.mjs';
+import {createAuth, defaultLoadClient} from './auth.mjs';
+import {guardRoute, safeNext} from './domain/access.mjs';
 
 const store = createStore();
 let studentId = 'DEMO-ALUNO-1';
 let flash = '';
+let session = null, loading = true;
+const auth = createAuth(defaultLoadClient, {redirectTo:location.origin + location.pathname});
 const app = document.querySelector('#app');
 const navItems = {
   aluno:[['catalogo','Catálogo','grid'],['solicitacoes','Minhas solicitações','list'],['como-funciona','Como funciona','book']],
@@ -27,7 +32,12 @@ function dispatch(command, payload) {
 function render(focus = true) {
   const [pathname, search = ''] = (location.hash.slice(1) || '/aluno/catalogo').split('?');
   const route = {path:pathname.split('/').filter(Boolean), params:new URLSearchParams(search)};
+  const guard = guardRoute({path:route.path, session, loading});
+  if (guard.action === 'redirect') { location.replace(guard.to); return; }
+  if (route.path[0] === 'entrar' && session) { location.replace(safeNext(route.params.get('next'))); return; }
+  const waiting = guard.action === 'wait';
   const area = route.path[0] === 'equipe' ? 'equipe' : 'aluno';
+  const personName = session ? `${session.nome} ${session.sobrenome}`.trim() : '';
   const state = store.getState();
   const student = state.students.find(s => s.id === studentId);
   const navigation = el('nav', {className:'navigation',id:'main-nav','aria-label':area==='aluno'?'Navegação do aluno':'Navegação da equipe'},
@@ -49,7 +59,11 @@ function render(focus = true) {
       el('span',{className:'brand-mark','aria-hidden':true},'U'),el('span',{},'uni',el('strong',{},'stock'),el('small',{},'MATERIAIS QUE CONECTAM IDEIAS'))),
     area==='aluno'&&navigation,
     el('div',{className:'header-tools'},el('span',{className:'area-switch'},icon('users'),areaSelect),
-      el('span',{className:'avatar','aria-label':area==='aluno'?student.name:'Equipe demonstrativa'},area==='aluno'?student.name[0]:'E'),
+      el('span',{className:'avatar',role:'img','aria-label':area==='aluno'?student.name:(personName||'Equipe demonstrativa')},area==='aluno'?student.name[0]:(personName[0]||'E').toUpperCase()),
+      area==='equipe'&&session&&el('button',{type:'button',className:'signout-button',onclick:async()=>{
+        try { await auth.signOut(); } catch { /* a sessão local é descartada mesmo se o serviço falhar */ }
+        session=null;flash='';navigate('#/aluno/catalogo');
+      }},'Sair'),
       el('button',{type:'button',className:'menu-button','aria-label':'Abrir navegação','aria-controls':'main-nav','aria-expanded':'false',onclick:event=>{
         const open=event.currentTarget.getAttribute('aria-expanded')!=='true';event.currentTarget.setAttribute('aria-expanded',String(open));
         navigation.classList.toggle('mobile-open',open);
@@ -61,15 +75,19 @@ function render(focus = true) {
       store.reset();studentId='DEMO-ALUNO-1';flash='Demonstração reiniciada. Os materiais estão no cenário inicial.';navigate('#/aluno/catalogo');
     }},icon('refresh'),'Reiniciar demonstração')));
   const context={state,route,studentId,dispatch,navigate};
-  const content=!['aluno','equipe'].includes(route.path[0])
+  const content=waiting
+    ? el('div',{className:'notice',role:'status'},icon('clock'),el('p',{},'Verificando acesso…'))
+    : route.path[0]==='entrar'
+    ? renderLogin({route,auth,navigate})
+    : !['aluno','equipe'].includes(route.path[0])
     ? empty('Página não encontrada','Volte ao catálogo para continuar.',linkButton('Ver catálogo','#/aluno/catalogo'))
     : area==='aluno'?renderStudent(context):renderTeam(context);
   const main=el('main',{id:'conteudo',tabindex:'-1',className:'page'},
-    el('div',{className:'context-row'},el('span',{},'Unistock',el('span',{},' / '),area==='aluno'?'Espaço do aluno':'Espaço da equipe'),
-      area==='aluno'&&el('div',{className:'person-switch'},el('label',{for:'person-select'},'Pessoa fictícia:'),personSelect)),
+    el('div',{className:'context-row'},el('span',{},'Unistock',el('span',{},' / '),area==='aluno'?(route.path[0]==='entrar'?'Entrar':'Espaço do aluno'):'Espaço da equipe'),
+      area==='aluno'&&route.path[0]!=='entrar'&&el('div',{className:'person-switch'},el('label',{for:'person-select'},'Pessoa fictícia:'),personSelect)),
     flash&&el('div',{className:'success-message',role:'status'},icon('check'),el('span',{},flash)),content,
     el('footer',{className:'page-footer'},el('span',{},'Unistock · Compartilhar faz a diferença.'),
-      el('span',{},'Demonstração sem autenticação. A seleção de área ou pessoa não protege dados.')));
+      el('span',{},'Somente a área da equipe exige login. Os dados desta demonstração são fictícios e a seleção de pessoa do aluno não protege dados.')));
   flash='';
   app.replaceChildren(header,demoBar,area==='equipe'?el('div',{className:'team-layout'},
     el('aside',{className:'sidebar'},el('p',{className:'eyebrow'},'GESTÃO DE MATERIAIS'),navigation,
@@ -79,4 +97,7 @@ function render(focus = true) {
 }
 document.querySelector('.skip-link').addEventListener('click',event=>{event.preventDefault();document.querySelector('main').focus();});
 window.addEventListener('hashchange',()=>render());
+auth.onChange(next => { session = next; loading = false; render(false); });
+auth.getSession().then(current => { session = current; }, () => { session = null; })
+  .then(() => { loading = false; render(false); });
 render(false);
