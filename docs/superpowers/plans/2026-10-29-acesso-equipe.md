@@ -48,7 +48,7 @@
 
 - [ ] **Step 1: Write the failing tests** em `tests/auth-validation.test.mjs`, uma por linha, com estas asserções:
   - dados válidos retornam e-mail normalizado: entrada `'  Ana@UniGuacu.com.br '` → `'ana@uniguacu.com.br'`; nome `' Ana '` → `'Ana'`.
-  - e-mail `gmail.com` **é aceito** (`herosdefreitas@gmail.com` passa).
+  - e-mail `gmail.com` **é aceito** (`pessoa@gmail.com` passa).
   - campos vazios lançam `DomainError` com `field` `nome`, `sobrenome`, `email`, `senha` (um teste por campo; mensagem `'Preencha este campo.'`).
   - e-mail `'sem-arroba'` e `'a@b'` lançam `field==='email'`, mensagem `'Informe um e-mail válido.'`.
   - senha `'1234567'` lança `field==='senha'`, mensagem `'A senha precisa ter pelo menos 8 caracteres.'`; `'12345678'` passa.
@@ -177,7 +177,7 @@
   8. observação: contas criadas antes do trigger não são revisadas; o envio de e-mails do plano gratuito tem limite baixo por hora.
 - [ ] **Step 3: Corrigir a spec** (`2026-10-29-acesso-equipe-design.md`): em "Telas e fluxo" e "Testes", deixar explícito que a validação do cliente confere só o formato do e-mail e que a decisão de domínio/exceção é do servidor, cuja rejeição aparece como "Este e-mail não tem permissão…". Acrescentar nota no topo da spec do protótipo: "A premissa 'sem autenticação' vale agora só para a área do aluno; ver 2026-10-29-acesso-equipe-design.md."
 - [ ] **Step 4: Atualizar `AGENTS.md` localmente:** trocar "Não há definição de … autenticação" por: a área da equipe exige login por e-mail via Supabase Auth, restrito ao domínio institucional e a exceções no servidor; papéis detalhados, aprovação e revogação continuam pendentes. Não adicionar ao git (arquivo ignorado).
-- [ ] **Step 5:** `git status` não mostra e-mails reais nem `AGENTS.md`; `grep -ri "gmail" . --exclude-dir=.git --exclude-dir=node_modules` não encontra endereços no repositório versionado.
+- [ ] **Step 5:** `git status` não mostra e-mails reais nem `AGENTS.md`; `grep -rniE "herosdefreitas|gusttavodallastella" . --exclude-dir=.git --exclude-dir=node_modules` não encontra nada nos arquivos versionados.
 - [ ] **Step 6: Commit** `docs: add Supabase setup for team authentication`
 
 ---
