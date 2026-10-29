@@ -5,7 +5,7 @@ import {renderTeam} from './ui/team.mjs';
 import {protocol} from './ui/shared.mjs';
 import {renderLogin} from './ui/login.mjs';
 import {createAuth, defaultLoadClient} from './auth.mjs';
-import {guardRoute, safeNext} from './domain/access.mjs';
+import {guardRoute, safeNext, sameSession} from './domain/access.mjs';
 
 const store = createStore();
 let studentId = 'DEMO-ALUNO-1';
@@ -97,7 +97,11 @@ function render(focus = true) {
 }
 document.querySelector('.skip-link').addEventListener('click',event=>{event.preventDefault();document.querySelector('main').focus();});
 window.addEventListener('hashchange',()=>render());
-auth.onChange(next => { session = next; loading = false; render(false); });
+auth.onChange(next => {
+  const changed = loading || !sameSession(session, next);
+  session = next; loading = false;
+  if (changed) render(false);
+});
 auth.getSession().then(current => { session = current; }, () => { session = null; })
   .then(() => { loading = false; render(false); });
 render(false);

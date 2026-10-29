@@ -14,3 +14,7 @@ export function guardRoute({path,session,loading}={}) {
   if (session) return {action:'allow'};
   return {action:'redirect',to:loginUrl('#/'+segments.join('/'))};
 }
+export function sameSession(a,b) {
+  if (!a||!b) return !a&&!b;
+  return a.email===b.email&&a.nome===b.nome&&a.sobrenome===b.sobrenome;
+}

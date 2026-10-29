@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {guardRoute, safeNext, loginUrl} from '../src/domain/access.mjs';
+import {guardRoute, safeNext, loginUrl, sameSession} from '../src/domain/access.mjs';
 
 const session={user:{id:'u1'}};
 
@@ -43,4 +43,14 @@ test('safeNext aceita so destinos da equipe', () => {
 test('loginUrl codifica o destino seguro', () => {
   assert.equal(loginUrl('#/equipe/solicitacoes'),'#/entrar?next='+encodeURIComponent('#/equipe/solicitacoes'));
   assert.equal(loginUrl('https://evil.com'),'#/entrar?next='+encodeURIComponent('#/equipe/resumo'));
+});
+
+test('sameSession compara a identidade da sessão',()=>{
+  const a={email:'a@exemplo.invalid',nome:'Ana',sobrenome:'Lima'};
+  assert.equal(sameSession(null,null),true);
+  assert.equal(sameSession(a,{...a}),true);
+  assert.equal(sameSession(null,a),false);
+  assert.equal(sameSession(a,null),false);
+  assert.equal(sameSession(a,{...a,nome:'Bia'}),false);
+  assert.equal(sameSession(a,{...a,email:'b@exemplo.invalid'}),false);
 });
