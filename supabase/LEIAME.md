@@ -22,7 +22,33 @@ Estes passos criam o servidor de login da área da equipe. Quem faz é a pessoa 
    - Logout pelo botão "Sair".
    - Acesso direto a `#/equipe/resumo` sem sessão: deve levar a `#/entrar`.
 8. Observações:
-   - Limite honesto: o login apenas esconde as telas da equipe. Ele não protege dados, porque o código da equipe e os dados de demonstração são públicos e ficam por navegador.
+   - O login libera a leitura e a gravação dos dados da equipe no servidor (ver "Dados do acervo e dos empréstimos" abaixo).
    - O gatilho também vale quando alguém já cadastrado troca de e-mail.
    - Contas criadas antes do gatilho (trigger) não são revisadas por ele; a regra vale só para novos cadastros.
    - O envio de e-mails do plano gratuito tem limite baixo por hora e serve só para teste. Muitos cadastros seguidos podem esbarrar nesse limite.
+
+## Dados do acervo e dos empréstimos
+
+Materiais, solicitações, confirmações, retiradas, devoluções e saídas de brindes ficam salvos no Supabase. Faça uma vez, depois de `setup.sql`:
+
+1. No **SQL Editor**, cole e execute `supabase/dados.sql` (tabelas, regras de acesso e funções). Pode ser executado de novo sem problema, por exemplo depois de uma atualização do sistema.
+2. Ainda no **SQL Editor**, cole e execute `supabase/carga_inicial.sql` (acervo levantado em `docs/lista_materiais.md`). Se for executado de novo, materiais já cadastrados são ignorados, então os saldos alterados pelo uso não voltam ao valor inicial.
+3. Abra o site, confira o catálogo e, na área da equipe, as telas **Materiais** e **Brindes**.
+
+Para mudar a carga inicial, edite `scripts/inventario-inicial.mjs` e rode `npm run carga` para gerar o SQL de novo. Essa mudança só vale para materiais ainda não cadastrados; depois que o sistema está em uso, cadastre novos materiais pela tela **Materiais → Cadastrar material**.
+
+Quem pode fazer o quê:
+
+| Quem | Pode |
+| --- | --- |
+| Qualquer pessoa (sem login) | Ver o catálogo (sem os brindes), enviar solicitação e acompanhar as solicitações enviadas do próprio navegador. |
+| Equipe (com login) | Ver tudo, cadastrar materiais, confirmar solicitações, registrar retiradas, devoluções e saídas de brindes. |
+
+Todas as gravações passam por funções no servidor, que validam as regras de novo e impedem saldo negativo mesmo quando duas pessoas registram ao mesmo tempo. Nenhum papel da API grava direto nas tabelas.
+
+Limites conhecidos:
+
+- O aluno não tem login. "Minhas solicitações" mostra os pedidos enviados daquele navegador; em outro aparelho, ou se os dados do site forem apagados, eles não aparecem (o protocolo continua válido para a equipe).
+- Como o envio de solicitação é aberto, alguém pode enviar pedidos falsos. A equipe confere cada pedido antes de confirmar.
+- Qualquer conta da equipe tem as mesmas permissões (não há papéis).
+- Ajuste de saldo, reposição, correção de cadastro e liberação de itens "aguardando avaliação" ainda não existem na tela. Até lá, só pelo painel do Supabase, com cuidado para manter `movimentos` e `unidades` coerentes.

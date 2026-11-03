@@ -1,8 +1,8 @@
-import {availability, availableUnits} from '../domain/inventory.mjs';
+import {availability, availableUnits, returnable} from '../domain/inventory.mjs';
 import {requestStatus} from '../domain/workflow.mjs';
 import {DomainError} from '../domain/validation.mjs';
-import {el, icon, field, errorSummary, showError, heading, notice, empty, linkButton} from './dom.mjs';
-import {categories, materialIcon, quantityText, requestCard, statusBadge, protocol} from './shared.mjs';
+import {el, icon, field, errorSummary, showError, heading, notice, empty, linkButton, onSubmit} from './dom.mjs';
+import {categories, measures, materialIcon, quantityText, requestCard, statusBadge, protocol, formatDate} from './shared.mjs';
 
 export function renderTeam(context) {
   const {state,route,dispatch,navigate} = context;
@@ -10,6 +10,7 @@ export function renderTeam(context) {
   if (screen==='resumo') return overview(context);
   if (screen==='solicitacoes'||screen==='retiradas') return queue(context);
   if (screen==='materiais') return route.path[2]==='novo'?newMaterial(context):materials(context);
+  if (screen==='brindes') return gifts(context);
   const request=state.requests.find(r=>r.id===route.path[2]);
   if (!request) return empty('Solicitação não encontrada','Escolha um pedido da lista para continuar.',linkButton('Ver solicitações','#/equipe/solicitacoes'));
   const material=state.materials.find(m=>m.id===request.materialId);
@@ -22,10 +23,15 @@ export function renderTeam(context) {
   const actions=el('div',{className:'card-actions'});
   const page=el('section',{},linkButton('Voltar às solicitações','#/equipe/solicitacoes','text-button','back'),
     heading('ATENDIMENTO',protocol(request.id),'Confira o pedido e registre cada etapa separadamente.'),errorSummary(),requestCard(state,request),
-    status==='requested'&&notice('Nesta demonstração, a confirmação não reserva o material. A disponibilidade será conferida novamente na retirada.'),actions);
-  if(status==='requested') actions.append(el('button',{type:'button',className:'button primary',onclick:()=>{
-    try{dispatch('confirm',{requestId:request.id,at:new Date().toISOString()});navigate(`#/equipe/solicitacao/${request.id}`);}
-    catch(error){showError(page,error);}
+    status==='requested'&&notice('A confirmação não reserva o material. A disponibilidade será conferida novamente na retirada.'),actions);
+  if(status==='requested') actions.append(el('button',{type:'button',className:'button primary',onclick:async event=>{
+    const button=event.currentTarget;
+    if(button.disabled) return;
+    button.disabled=true;button.setAttribute('aria-busy','true');
+    // O servidor grava o horário da confirmação; aqui só evita relógio local atrasado em relação ao pedido.
+    const at=new Date(Math.max(Date.now(),Date.parse(request.at))).toISOString();
+    try{await dispatch('confirm',{requestId:request.id,at});navigate(`#/equipe/solicitacao/${request.id}`);}
+    catch(error){button.disabled=false;button.removeAttribute('aria-busy');showError(page,error);}
   }},icon('check'),'Confirmar solicitação'));
   if(status==='confirmed') actions.append(linkButton('Registrar retirada',`#/equipe/retirada/${request.id}`));
   if(status==='loaned') actions.append(linkButton('Registrar devolução',`#/equipe/devolucao/${request.id}`));
@@ -47,7 +53,7 @@ function overview(context) {
     el('div',{className:'section-heading'},el('h2',{},'Solicitações recentes'),el('a',{href:'#/equipe/solicitacoes'},'Ver todas →')),
     recent.length?operationList(state,recent):empty('Um acervo pronto para novas ideias','Ainda não há solicitações. Explore a área do aluno e envie um pedido para experimentar o atendimento.',
       linkButton('Ir para a área do aluno','#/aluno/catalogo','secondary')),
-    notice('Você está em uma demonstração. Os saldos são fictícios, e todos os registros reiniciam ao recarregar a página.'));
+    notice('Os registros ficam salvos no servidor e são compartilhados por toda a equipe.'));
 }
 
 function operationList(state,requests) {
@@ -90,11 +96,11 @@ function formPage(request,title,description,form,summary) {
   return el('section',{},linkButton('Voltar ao pedido',`#/equipe/solicitacao/${request.id}`,'text-button','back'),
     heading(protocol(request.id),title,description),el('div',{className:'form-layout'},form,
       el('aside',{className:'card'},el('p',{className:'eyebrow'},'RESUMO DO PEDIDO'),el('h2',{},request.name),
-        el('p',{className:'muted'},request.course),el('hr'),summary,notice('Datas deste registro são demonstrativas.'))));
+        el('p',{className:'muted'},request.course),el('hr'),summary)));
 }
-function pickupForm({state,dispatch,navigate},request,material) {
+function pickupForm({state,dispatch,navigate,personName},request,material) {
   const count=availability(state,material.id);
-  const partial=notice('Esta demonstração registra uma única retirada. O restante não ficará pendente para outra entrega.');
+  const partial=notice('Cada pedido tem uma única retirada. O restante não ficará pendente para outra entrega.');
   partial.hidden=true;
   const quantity=field({name:'quantity',label:`Quantidade entregue (${material.measure})`,type:'number',value:Math.min(count,request.quantity),min:1,
     max:Math.min(count,request.quantity),step:1,hint:`Solicitado: ${request.quantity}. Disponível agora: ${count}.`});
@@ -104,18 +110,16 @@ function pickupForm({state,dispatch,navigate},request,material) {
     el('legend',{},'Unidades entregues'),availableUnits(state,material.id).map(unit=>el('label',{},
       el('input',{type:'checkbox',name:'codes',value:unit.code}),unit.code)),el('span',{id:'codes-error',className:'field-error'})):null;
   const form=el('form',{className:'card form-card',novalidate:true},errorSummary(),el('h2',{},material.name),quantity,partial,codes,
-    field({name:'operator',label:'Pessoa responsável pelo registro',value:'Equipe Exemplo'}),
+    field({name:'operator',label:'Pessoa responsável pelo registro',value:personName||''}),
     field({name:'at',label:'Data e horário da retirada',type:'datetime-local',value:localNow(),step:1}),
-    material.category!=='consumable'&&field({name:'dueAt',label:'Previsão de devolução combinada',type:'datetime-local',step:1,hint:'Preencha o prazo combinado com a pessoa solicitante.'}),
-    material.category==='consumable'&&notice('Material de consumo: a retirada encerra o pedido e reduz o estoque. Não há devolução.'),
+    returnable(material.category)&&field({name:'dueAt',label:'Previsão de devolução combinada',type:'datetime-local',step:1,hint:'Preencha o prazo combinado com a pessoa solicitante.'}),
+    !returnable(material.category)&&notice('Material de consumo: a retirada encerra o pedido e reduz o estoque. Não há devolução.'),
     el('div',{className:'form-actions'},linkButton('Voltar',`#/equipe/solicitacao/${request.id}`,'ghost','back'),
       el('button',{type:'submit',className:'button primary'},'Registrar retirada',icon('check'))));
-  form.addEventListener('submit',event=>{
-    event.preventDefault();const values=new FormData(form);
-    try{dispatch('pickup',{requestId:request.id,quantity:Number(values.get('quantity')),codes:values.getAll('codes'),operator:values.get('operator'),
-      at:localISO(values.get('at'),'at'),dueAt:material.category==='consumable'?null:localISO(values.get('dueAt'),'dueAt')});
-      navigate(`#/equipe/solicitacao/${request.id}`);
-    }catch(error){showError(form,error);}
+  onSubmit(form,async values=>{
+    await dispatch('pickup',{requestId:request.id,quantity:Number(values.get('quantity')),codes:values.getAll('codes'),operator:values.get('operator'),
+      at:localISO(values.get('at'),'at'),dueAt:returnable(material.category)?localISO(values.get('dueAt'),'dueAt'):null});
+    navigate(`#/equipe/solicitacao/${request.id}`);
   });
   return formPage(request,'Registrar retirada','Confira a quantidade realmente entregue antes de concluir.',form,
     el('div',{},el('strong',{},material.name),el('p',{},quantityText(request.quantity,material.measure),' solicitadas'),
@@ -133,11 +137,9 @@ function returnForm({state,dispatch,navigate},request,material) {
     el('p',{className:'small muted'},'Materiais devolvidos com problema ficam indisponíveis, aguardando avaliação.'),
     el('div',{className:'form-actions'},linkButton('Voltar',`#/equipe/solicitacao/${request.id}`,'ghost','back'),
       el('button',{className:'button primary',type:'submit'},'Registrar devolução',icon('check'))));
-  form.addEventListener('submit',event=>{
-    event.preventDefault();const values=new FormData(form);
-    try{dispatch('return',{requestId:request.id,at:localISO(values.get('at'),'at'),condition:values.get('condition'),notes:values.get('notes')});
-      navigate(`#/equipe/solicitacao/${request.id}`);
-    }catch(error){showError(form,error);}
+  onSubmit(form,async values=>{
+    await dispatch('return',{requestId:request.id,at:localISO(values.get('at'),'at'),condition:values.get('condition'),notes:values.get('notes')});
+    navigate(`#/equipe/solicitacao/${request.id}`);
   });
   return formPage(request,'Registrar devolução','Receba, confira e registre o estado do material.',form,
     el('div',{},el('strong',{},material.name),el('p',{},quantityText(pickup.quantity,material.measure),' retiradas'),
@@ -145,7 +147,7 @@ function returnForm({state,dispatch,navigate},request,material) {
 }
 
 function materials({state}) {
-  return el('section',{},heading('ACERVO DEMONSTRATIVO','Materiais e disponibilidade','Consulte o saldo, as unidades e os itens que aguardam avaliação.',linkButton('Cadastrar material','#/equipe/materiais/novo','primary','plus')),
+  return el('section',{},heading('ACERVO','Materiais e disponibilidade','Consulte o saldo, as unidades e os itens que aguardam avaliação.',linkButton('Cadastrar material','#/equipe/materiais/novo','primary','plus')),
     el('div',{className:'stock-list'},Object.entries(categories).map(([category,label])=>[
       el('div',{className:'section-heading'},el('h2',{},label)),
       state.materials.filter(m=>m.category===category).map(material=>{
@@ -159,29 +161,67 @@ function materials({state}) {
           el('div',{className:'stock-numbers'},el('strong',{},availability(state,material.id)),el('small',{},'disponíveis · ',material.measure))),
           units.length>0&&el('div',{className:'unit-list'},units.map(u=>el('span',{},u.code,' · ',{available:'Disponível',loaned:'Emprestado',review:'Aguardando avaliação'}[u.status]))),
           review>0&&el('p',{className:'review-count'},icon('info'),' ',quantityText(review,material.measure),' aguardando avaliação'));
-      })])),notice('O cadastro usa dados fictícios. Ajustes de saldo, reposições, correções e liberação de itens em avaliação não fazem parte desta demonstração.'));
+      })])),notice('Ajustes de saldo, reposições, correções e liberação de itens em avaliação ainda não estão disponíveis no sistema.'));
 }
 
 function newMaterial({dispatch,navigate}) {
-  const category=field({name:'category',label:'Categoria',value:'equipment',options:Object.entries(categories)});
-  const measure=field({name:'measure',label:'Unidade de medida',value:'unidade',options:[['unidade','Unidade'],['caixa','Caixa']]});
-  const codes=field({name:'codes',label:'Códigos das unidades',type:'textarea',hint:'Um código por linha. Use o prefixo DEMO-, por exemplo DEMO-C-01.'});
+  const category=field({name:'category',label:'Categoria',value:'equipment',options:Object.entries(categories),
+    hint:'Equipamentos e reutilizáveis exigem devolução. Consumo e brindes saem do estoque sem devolução; brindes não aparecem para o aluno.'});
+  const measure=field({name:'measure',label:'Unidade de medida',value:'unidade',options:measures});
+  const codes=field({name:'codes',label:'Números de patrimônio',type:'textarea',hint:'Um por linha, um para cada unidade. Ex.: 9501.'});
   const update=()=>{const equipment=category.querySelector('select').value==='equipment';
     codes.hidden=!equipment;codes.querySelector('textarea').required=equipment;
     measure.querySelector('select').disabled=equipment;if(equipment)measure.querySelector('select').value='unidade';};
   category.querySelector('select').addEventListener('change',update);update();
   const form=el('form',{className:'card form-card',novalidate:true},errorSummary(),
     field({name:'name',label:'Nome do material'}),el('div',{className:'form-grid two-cols'},category,measure),
-    field({name:'quantity',label:'Saldo inicial fictício',type:'number',value:0,min:0,step:1}),codes,
-    notice('Cadastre somente materiais demonstrativos. Equipamentos precisam de um código único para cada unidade; saldo zero não exige códigos.'),
+    field({name:'quantity',label:'Saldo inicial',type:'number',value:0,min:0,step:1}),codes,
+    notice('Equipamentos precisam de um número de patrimônio único para cada unidade; saldo zero não exige números. Depois do cadastro, categoria, unidade de medida e saldo não podem ser editados.'),
     el('div',{className:'form-actions'},linkButton('Voltar','#/equipe/materiais','ghost','back'),el('button',{className:'button primary',type:'submit'},'Cadastrar material',icon('plus'))));
   const id=crypto.randomUUID();
-  form.addEventListener('submit',event=>{
-    event.preventDefault();const values=new FormData(form),selected=values.get('category');
-    try{dispatch('material',{id,name:values.get('name'),category:selected,measure:selected==='equipment'?'unidade':values.get('measure'),quantity:Number(values.get('quantity')),
-      codes:selected==='equipment'?String(values.get('codes')).split(/\r?\n/).map(s=>s.trim()).filter(Boolean):[]});navigate('#/equipe/materiais');
-    }catch(error){showError(form,error);}
+  onSubmit(form,async values=>{
+    const selected=values.get('category');
+    await dispatch('material',{id,name:values.get('name'),category:selected,measure:selected==='equipment'?'unidade':values.get('measure'),quantity:Number(values.get('quantity')),
+      codes:selected==='equipment'?String(values.get('codes')).split(/\r?\n/).map(s=>s.trim()).filter(Boolean):[]});
+    navigate(selected==='gift'?'#/equipe/brindes':'#/equipe/materiais');
   });
-  return el('section',{},heading('ACERVO DEMONSTRATIVO','Cadastrar material','Defina a categoria e a unidade de medida antes de disponibilizar o item.'),
+  return el('section',{},heading('ACERVO','Cadastrar material','Defina a categoria e a unidade de medida antes de disponibilizar o item.'),
     el('div',{className:'narrow-form'},form));
+}
+
+function gifts({state,dispatch,navigate,personName}) {
+  const list=state.materials.filter(m=>m.category==='gift');
+  const stocked=list.filter(m=>availability(state,m.id)>0);
+  const history=state.giftOuts.slice().sort((a,b)=>Date.parse(b.at)-Date.parse(a.at));
+  const id=crypto.randomUUID();
+  const material=field({name:'materialId',label:'Brinde',value:stocked[0]?.id||'',
+    options:stocked.map(m=>[m.id,`${m.name} (${quantityText(availability(state,m.id),m.measure)})`])});
+  const form=el('form',{className:'card form-card',novalidate:true},errorSummary(),el('h2',{},'Registrar saída de brinde'),
+    material,field({name:'quantity',label:'Quantidade entregue',type:'number',value:1,min:1,step:1}),
+    field({name:'recipient',label:'Entregue para',hint:'Pessoa, setor ou evento que recebeu o brinde.'}),
+    field({name:'operator',label:'Pessoa responsável pelo registro',value:personName||''}),
+    field({name:'at',label:'Data e horário da entrega',type:'datetime-local',value:localNow(),step:1}),
+    field({name:'notes',label:'Observações',type:'textarea',required:false}),
+    el('div',{className:'form-actions'},el('button',{type:'submit',className:'button primary'},'Registrar saída',icon('check'))));
+  onSubmit(form,async values=>{
+    await dispatch('gift',{id,materialId:values.get('materialId'),quantity:Number(values.get('quantity')),recipient:values.get('recipient'),
+      operator:values.get('operator'),at:localISO(values.get('at'),'at'),notes:values.get('notes')});
+    navigate('#/equipe/brindes');
+  });
+  const materialOf=materialId=>state.materials.find(m=>m.id===materialId);
+  return el('section',{},heading('BRINDES','Brindes','Registre a entrega de brindes. Eles não aparecem no catálogo do aluno e não têm devolução.',
+    linkButton('Cadastrar brinde','#/equipe/materiais/novo','secondary','plus')),
+    el('div',{className:'form-layout'},
+      stocked.length?form:empty('Nenhum brinde disponível','Cadastre um brinde com saldo para registrar entregas.',linkButton('Cadastrar material','#/equipe/materiais/novo','secondary','plus')),
+      el('aside',{className:'card'},el('p',{className:'eyebrow'},'SALDO'),
+        list.length?el('ul',{className:'gift-stock'},list.map(m=>el('li',{},el('span',{},m.name),el('strong',{},quantityText(availability(state,m.id),m.measure))))):
+          el('p',{className:'muted'},'Nenhum brinde cadastrado.'))),
+    el('div',{className:'section-heading'},el('h2',{},'Entregas registradas')),
+    history.length?el('div',{className:'operation-list'},history.map(out=>{
+      const m=materialOf(out.materialId);
+      return el('article',{className:'operation-row'},el('div',{className:'item-title'},
+        el('span',{className:'item-icon gift'},icon('gift')),
+        el('div',{},el('h3',{},m?m.name:'Brinde'),el('p',{},out.recipient,' · ',quantityText(out.quantity,m?m.measure:'unidade')),
+          el('p',{className:'small muted'},formatDate(out.at),' · registrado por ',out.operator,out.notes?` · ${out.notes}`:''))));
+    })):empty('Nenhuma entrega registrada','As saídas de brindes aparecem aqui assim que forem registradas.'));
 }

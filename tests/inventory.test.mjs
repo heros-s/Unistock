@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyState, addMaterial, availability, searchMaterials} from '../src/domain/inventory.mjs';
-import {createDemoState} from '../src/demo.mjs';
+import {createDemoState} from './fixtures.mjs';
 
 const item = (changes = {}) => ({id:'m', name:'Notebook de demonstração',
   category:'equipment', measure:'unidade', quantity:1, codes:['DEMO-N-01'], ...changes});
@@ -20,7 +20,7 @@ test('códigos são únicos após normalização, inclusive entre materiais', ()
 });
 test('rejeita cadastro incoerente', () => {
   for (const changes of [{quantity:-1},{quantity:1.5},{name:' '},
-    {category:'outra'},{quantity:2},{codes:['N01']}]) {
+    {category:'outra'},{quantity:2},{codes:['N 01']},{codes:['-01']},{measure:'caixa'}]) {
     assert.throws(() => addMaterial(emptyState(), item(changes)));
   }
 });
@@ -37,4 +37,11 @@ test('busca ignora acentos e espaços e combina categoria',()=>{
   assert.deepEqual(searchMaterials(state,{query:' REGUA ',category:'reusable'}).map(m=>m.id),['regua']);
   assert.equal(searchMaterials(state,{query:'régua',category:'consumable'}).length,0);
   assert.equal(searchMaterials(state,{query:'inexistente',category:''}).length,0);
+});
+test('equipamento aceita número de patrimônio e brinde é uma categoria sem códigos',()=>{
+  const state=addMaterial(emptyState(),item({quantity:2,codes:['9501',' proj-11533 ']}));
+  assert.deepEqual(state.units.map(u=>u.code),['9501','PROJ-11533']);
+  const gift=addMaterial(emptyState(),{id:'g',name:'Boné',category:'gift',measure:'unidade',quantity:7});
+  assert.equal(availability(gift,'g'),7);
+  assert.throws(()=>addMaterial(emptyState(),{id:'g',name:'Boné',category:'gift',measure:'unidade',quantity:1,codes:['1']}),/código/i);
 });

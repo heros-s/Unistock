@@ -6,7 +6,7 @@ const routes = new Map([
   ['/', {file:'index.html', type:'text/html'}],
   ['/index.html', {file:'index.html', type:'text/html'}],
   ['/src/styles.css', {file:'src/styles.css', type:'text/css'}],
-  ...['main', 'store', 'demo', 'domain/validation', 'domain/inventory', 'domain/workflow', 'domain/access', 'domain/auth-validation', 'auth', 'config',
+  ...['main', 'store', 'data', 'local', 'domain/validation', 'domain/inventory', 'domain/workflow', 'domain/access', 'domain/auth-validation', 'auth', 'config',
     'ui/dom', 'ui/shared', 'ui/student', 'ui/team', 'ui/login'].map(name =>
     [`/src/${name}.mjs`, {file:`src/${name}.mjs`, type:'text/javascript'}])
 ]);
