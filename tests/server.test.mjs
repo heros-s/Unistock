@@ -19,7 +19,13 @@ test('serve o protótipo e não expõe documentos ou arquivos internos',async t=
   assert.equal(css.status,200);
   assert.match(css.headers.get('content-type'),/text\/css/);
   await css.text();
-  for(const path of ['/AGENTS.md','/.git/config','/package.json','/../AGENTS.md']) {
+  for(const path of ['/src/auth.mjs','/src/config.mjs','/src/domain/access.mjs','/src/domain/auth-validation.mjs','/src/ui/login.mjs']) {
+    const result=await fetch(base+path);
+    assert.equal(result.status,200,path);
+    assert.match(result.headers.get('content-type'),/text\/javascript/);
+    await result.text();
+  }
+  for(const path of ['/supabase/setup.sql','/AGENTS.md','/.git/config','/package.json','/../AGENTS.md']) {
     const result=await fetch(base+path);
     assert.equal(result.status,404);
     await result.text();
