@@ -1,23 +1,26 @@
-import {availability, searchMaterials} from '../domain/inventory.mjs';
-import {el, icon, field, errorSummary, showError, heading, notice, empty, linkButton} from './dom.mjs';
-import {categories, materialIcon, descriptions, quantityText, requestCard} from './shared.mjs';
+import {availability, searchMaterials, returnable} from '../domain/inventory.mjs';
+import {el, icon, field, errorSummary, heading, notice, empty, linkButton, onSubmit} from './dom.mjs';
+import {categories, studentCategories, materialIcon, descriptions, quantityText, requestCard} from './shared.mjs';
+
+// O aluno não vê brindes, mesmo quando a pessoa logada da equipe abre a área do aluno.
+const visible = material => Boolean(material) && material.category !== 'gift';
 
 export function renderStudent(context) {
-  const {state, route, studentId, dispatch, navigate} = context;
+  const {state, route, dispatch, navigate, local} = context;
   const screen = route.path[1];
-  const student = state.students.find(s => s.id === studentId);
   if (screen === 'catalogo') return catalog(context);
   if (screen === 'solicitacoes') {
-    const requests = state.requests.filter(r => r.studentId === studentId).slice().reverse();
+    const mine = new Set(local.requestIds());
+    const requests = state.requests.filter(r => mine.has(r.id)).slice().reverse();
     return el('section', {}, heading('SEU ACOMPANHAMENTO', 'Minhas solicitações', 'Da primeira ideia à devolução. Acompanhe cada etapa por aqui.',
       linkButton('Explorar materiais', '#/aluno/catalogo', 'secondary')),
-      notice(`Exibindo os pedidos de ${student.name}, pessoa fictícia. Esta seleção demonstrativa não protege dados.`),
+      notice('Aqui aparecem os pedidos enviados deste navegador. Em outro aparelho, ou se os dados do site forem apagados, eles não aparecerão: guarde o número do protocolo.'),
       requests.length ? el('div', {className:'request-list'}, requests.map(r => requestCard(state,r))) :
         empty('Seu próximo projeto começa no catálogo', 'Quando você solicitar um material, poderá acompanhar o pedido aqui.', linkButton('Ver catálogo', '#/aluno/catalogo')));
   }
   if (screen === 'como-funciona') return guide();
   const material = state.materials.find(m => m.id === route.path[2]);
-  if (!material) return empty('Material não encontrado', 'Volte ao catálogo para consultar os materiais da demonstração.', linkButton('Ver catálogo', '#/aluno/catalogo'));
+  if (!visible(material)) return empty('Material não encontrado', 'Volte ao catálogo para consultar os materiais disponíveis.', linkButton('Ver catálogo', '#/aluno/catalogo'));
   const count = availability(state, material.id);
   if (screen === 'material') return el('section', {}, back(),
     heading(categories[material.category], material.name, descriptions[material.category]),
@@ -25,38 +28,37 @@ export function renderStudent(context) {
       el('div', {className:`material-detail-art ${material.category}`}, icon(materialIcon(material)), el('span', {}, material.name)),
       el('div', {className:'card detail-panel'}, el('span', {className:count ? 'badge available' : 'badge unavailable'}, count ? 'Disponível para solicitar' : 'Indisponível no momento'),
         el('h2', {}, quantityText(count, material.measure)),
-        el('p', {className:'lead'}, material.category === 'consumable' ? 'Sem devolução. A quantidade efetivamente retirada será registrada no estoque.' : 'Exige devolução. Combine o prazo com a equipe e permita a conferência ao devolver.'),
+        el('p', {className:'lead'}, returnable(material.category) ? 'Exige devolução. Combine o prazo com a equipe e permita a conferência ao devolver.' : 'Sem devolução. A quantidade efetivamente retirada será registrada no estoque.'),
         notice('A solicitação será analisada pela equipe. Aguarde a confirmação antes de retirar.'),
         count > 0 ? linkButton('Solicitar material', `#/aluno/solicitar/${material.id}`) : el('button', {className:'button',disabled:true}, 'Indisponível no momento'))));
   if (screen !== 'solicitar') return empty('Página não encontrada', 'Escolha uma opção na navegação.', back());
-  if (!count) return empty('Indisponível no momento', 'Este material está sem unidades disponíveis na demonstração.', back());
+  if (!count) return empty('Indisponível no momento', 'Este material está sem unidades disponíveis agora.', back());
   const id = crypto.randomUUID();
+  const requester = local.requester();
   const form = el('form', {className:'card form-card', novalidate:true}, errorSummary(),
     el('h2', {}, 'Conte um pouco sobre sua atividade'),
     el('p', {className:'muted'}, 'Preencha os campos abaixo. Todos são obrigatórios.'),
-    el('div', {className:'form-grid two-cols'}, field({name:'name',label:'Nome do solicitante',value:student.name}),
-      field({name:'course',label:'Turma / curso',value:student.course})),
+    el('div', {className:'form-grid two-cols'}, field({name:'name',label:'Nome do solicitante',value:requester.name}),
+      field({name:'course',label:'Turma / curso',value:requester.course})),
     field({name:'quantity',label:`Quantidade (${material.measure})`,type:'number',value:1,min:1,max:count,step:1,
       hint:`Disponível agora: ${quantityText(count,material.measure)}. Solicite somente o necessário.`}),
     field({name:'purpose',label:'Finalidade',type:'textarea',hint:'Ex.: apresentação de trabalho, aula prática ou atividade acadêmica.'}),
     notice('Enviar a solicitação não reserva o material. A disponibilidade será conferida novamente na retirada.'),
     el('div', {className:'form-actions'}, linkButton('Voltar', `#/aluno/material/${material.id}`, 'ghost', 'back'),
       el('button', {className:'button primary',type:'submit'}, 'Enviar solicitação', icon('arrow'))));
-  form.addEventListener('submit', event => {
-    event.preventDefault();
-    const values = new FormData(form);
-    try {
-      dispatch('request',{id,studentId,materialId:material.id,name:values.get('name'),course:values.get('course'),
-        quantity:Number(values.get('quantity')),purpose:values.get('purpose'),at:new Date().toISOString()});
-      navigate('#/aluno/solicitacoes');
-    } catch (error) { showError(form,error); }
+  onSubmit(form, async values => {
+    const name = String(values.get('name') ?? ''), course = String(values.get('course') ?? '');
+    await dispatch('request',{id,materialId:material.id,name,course,
+      quantity:Number(values.get('quantity')),purpose:values.get('purpose'),at:new Date().toISOString()});
+    local.saveRequester({name:name.trim(), course:course.trim()});
+    navigate('#/aluno/solicitacoes');
   });
   return el('section', {}, back(), heading('NOVA SOLICITAÇÃO', 'O que você vai criar?', 'Peça o material para apoiar sua próxima atividade.'),
     el('div', {className:'form-layout'}, form,
       el('aside', {className:'card summary-card'}, el('div', {className:`summary-art ${material.category}`}, icon(materialIcon(material))),
         el('p', {className:'eyebrow'}, 'SEU MATERIAL'), el('h2', {}, material.name), el('p', {className:'muted'}, categories[material.category]),
         el('hr'), el('p', {}, icon('box'), ' ', quantityText(count,material.measure), ' disponíveis'),
-        el('p', {}, icon(material.category === 'consumable' ? 'check' : 'refresh'), ' ', material.category === 'consumable' ? 'Sem devolução' : 'Exige devolução'),
+        el('p', {}, icon(returnable(material.category) ? 'refresh' : 'check'), ' ', returnable(material.category) ? 'Exige devolução' : 'Sem devolução'),
         el('p', {className:'small muted'}, 'Um material por solicitação. Você pode fazer outros pedidos pelo catálogo.'))));
 }
 
@@ -68,7 +70,7 @@ function catalog({state}) {
   const grid = el('div', {className:'catalog-grid'});
   const tabs = el('div', {className:'category-tabs',role:'group','aria-label':'Filtrar por categoria'});
   const update = () => {
-    const materials = searchMaterials(state,{category,query});
+    const materials = searchMaterials(state,{category,query}).filter(visible);
     resultLabel.textContent = `${materials.length} ${materials.length === 1 ? 'material encontrado' : 'materiais encontrados'}`;
     grid.replaceChildren(...materials.map(material => materialCard(state,material)));
     if (!materials.length) grid.append(empty('Nenhum material encontrado', 'Tente outro nome ou escolha uma categoria diferente.',
@@ -80,11 +82,11 @@ function catalog({state}) {
     const selected = button.dataset.category === category;
     button.setAttribute('aria-pressed',String(selected)); button.classList.toggle('selected',selected);
   });
-  for (const [value,label] of [['','Todos os materiais'],...Object.entries(categories)]) {
+  for (const [value,label] of [['','Todos os materiais'],...Object.entries(studentCategories)]) {
     tabs.append(el('button', {type:'button','data-category':value,'aria-pressed':String(value===category),className:value===category?'selected':'',
       onclick:()=>{category=value;updateTabs();update();}}, label));
   }
-  const search = el('input', {id:'search',type:'search',placeholder:'Busque por notebook, tesoura, cartolina…',
+  const search = el('input', {id:'search',type:'search',placeholder:'Busque por projetor, caneta, papel A4…',
     oninput:event=>{query=event.target.value;update();}});
   update();
   return el('section', {},
@@ -94,7 +96,7 @@ function catalog({state}) {
         el('p', {}, 'Consulte o que está disponível, solicite e retire na secretaria. Devolva os itens retornáveis no prazo combinado.'),
         el('a', {href:'#/aluno/como-funciona',className:'hero-link'}, 'Como funciona o empréstimo', icon('arrow')))),
     el('div', {className:'catalog-title'},el('div',{},el('p',{className:'eyebrow'},'EXPLORE O ACERVO'),el('h2',{},'O que você precisa hoje?')),
-      el('p', {className:'muted small'}, icon('info'), ' Saldos fictícios para demonstração')),
+      el('p', {className:'muted small'}, icon('info'), ' Disponibilidade atualizada a cada visita')),
     el('div', {className:'catalog-toolbar'}, el('div', {className:'search-box'},el('label',{for:'search',className:'sr-only'},'Buscar materiais'),icon('search'),search),resultLabel),
     tabs, grid,
     el('div', {className:'catalog-footer'},icon('book'),el('div',{},el('strong',{},'Cuidar também faz parte de compartilhar.'),
@@ -110,7 +112,7 @@ function materialCard(state, material) {
     el('div', {className:'material-content'},el('span',{className:`category-label ${material.category}`},categories[material.category]),
       el('h3',{},material.name),el('p',{className:'material-description'},descriptions[material.category]),
       el('div',{className:'material-meta'},el('span',{},icon('box'),quantityText(count,material.measure)),
-        el('span',{},icon(material.category==='consumable'?'check':'refresh'),material.category==='consumable'?'Sem devolução':'Devolver após o uso')),
+        el('span',{},icon(returnable(material.category)?'refresh':'check'),returnable(material.category)?'Devolver após o uso':'Sem devolução')),
       el('a',{href:`#/aluno/material/${material.id}`,className:'card-link'},'Ver material',icon('arrow'))));
 }
 

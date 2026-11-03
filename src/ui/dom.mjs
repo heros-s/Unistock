@@ -34,6 +34,7 @@ const glyphs = {
   refresh:[['path',{d:'M19 12a7 7 0 1 1-2.2-5.1'}],['polygon',{points:'19,3 19,8.4 14,7',fill:'currentColor'}]],
   users:[['circle',{cx:9,cy:8,r:3.5}],['polyline',{points:'2.5,20 2.5,17 6,13.5 12,13.5 15.5,17 15.5,20'}]],
   plus:[['line',{x1:12,y1:5,x2:12,y2:19}],['line',{x1:5,y1:12,x2:19,y2:12}]],
+  gift:[['rect',{x:3,y:8,width:18,height:4}],['rect',{x:5,y:12,width:14,height:9}],['line',{x1:12,y1:8,x2:12,y2:21}],['path',{d:'M12 8c-2-4-6-4-6-1.5S9 8 12 8c3 0 6-1 6-1.5S14 4 12 8'}]],
   menu:[['line',{x1:4,y1:7,x2:20,y2:7}],['line',{x1:4,y1:12.5,x2:20,y2:12.5}],['line',{x1:4,y1:18,x2:20,y2:18}]]
 };
 export function icon(name, className = '') {
@@ -85,3 +86,20 @@ export const heading = (eyebrow, title, description, action) => el('div', {class
   el('div', {}, el('p', {className:'eyebrow'}, eyebrow), el('h1', {tabindex:'-1'}, title), el('p', {className:'lead'}, description)), action);
 export const empty = (title, description, action) => el('div', {className:'empty'},
   el('div', {className:'empty-icon'}, icon('box')), el('h2', {}, title), el('p', {}, description), action);
+
+/** Envio assíncrono: bloqueia reenvio enquanto grava e mostra o erro junto ao campo. */
+export function onSubmit(form, handler) {
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (form.dataset.busy) return;
+    const buttons = [...form.querySelectorAll('button[type="submit"]')];
+    form.dataset.busy = 'true';
+    buttons.forEach(button => { button.disabled = true; button.setAttribute('aria-busy', 'true'); });
+    try { await handler(new FormData(form)); }
+    catch (error) { showError(form, error); }
+    finally {
+      delete form.dataset.busy;
+      buttons.forEach(button => { button.disabled = false; button.removeAttribute('aria-busy'); });
+    }
+  });
+}

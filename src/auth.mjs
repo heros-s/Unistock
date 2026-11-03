@@ -130,5 +130,6 @@ export function createAuth(loadClient=defaultLoadClient,{redirectTo,config={url:
     };
   }
 
-  return {signUp,signIn,signOut,getSession,onChange};
+  // client: o mesmo cliente (e sessão) é usado por data.mjs para ler e gravar o acervo.
+  return {signUp,signIn,signOut,getSession,onChange,client:getClient};
 }

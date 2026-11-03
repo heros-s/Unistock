@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createDemoState} from '../src/demo.mjs';
+import {createDemoState} from './fixtures.mjs';
 import {availability, addMaterial} from '../src/domain/inventory.mjs';
-import {requestMaterial,confirmRequest,recordPickup,recordReturn,requestStatus} from '../src/domain/workflow.mjs';
+import {requestMaterial,confirmRequest,recordPickup,recordReturn,recordGiftOut,requestStatus} from '../src/domain/workflow.mjs';
 const at='2026-10-05T12:00:00.000Z'; // Data de teste fictícia, sem relação com o briefing.
 function pending(id='r1',materialId='notebook',quantity=1) {
-  return {id,studentId:'DEMO-ALUNO-1',name:'Ana Exemplo',course:'Design',
+  return {id,name:'Ana Exemplo',course:'Design',
     materialId,quantity,purpose:'Atividade demonstrativa',at};
 }
 function confirmed(s,id='r1',materialId='notebook',quantity=1) {
@@ -69,11 +69,11 @@ test('entrega menor registra só a quantidade entregue e não aceita segunda ret
   s=recordReturn(s,returned());
   assert.equal(availability(s,'tesoura'),4);
 });
-test('bloqueia pedido duplicado, aluno inexistente e quantidade maior que saldo',()=>{
+test('bloqueia pedido duplicado, material inexistente e quantidade maior que saldo',()=>{
   const initial=createDemoState();
   const once=requestMaterial(initial,pending());
   assert.throws(()=>requestMaterial(once,pending()),/solicitação/i);
-  for(const change of [{studentId:'ausente'},{quantity:0},{quantity:1.5},
+  for(const change of [{materialId:'ausente'},{quantity:0},{quantity:1.5},
     {quantity:3},{name:' '},{course:' '},{purpose:' '},{at:'inválida'}])
     assert.throws(()=>requestMaterial(initial,{...pending(),...change}));
 });
@@ -93,4 +93,25 @@ test('não pula confirmação nem registra confirmação anterior ao pedido',()=
   assert.throws(()=>confirmRequest(s,{requestId:'r1',at:'2026-10-04T12:00:00Z'}),
     error=>error.field==='at');
   assert.deepEqual(s,before);
+});
+test('brinde não pode ser solicitado pelo aluno',()=>{
+  assert.throws(()=>requestMaterial(createDemoState(),pending('r1','bone')),error=>error.field==='materialId');
+});
+const gift=(changes={})=>({id:'g1',materialId:'bone',quantity:2,recipient:'Evento Dia de Campo',
+  operator:'Equipe Exemplo',at,notes:'',...changes});
+test('saída de brinde baixa o saldo, sem devolução, e não se repete',()=>{
+  const initial=createDemoState();
+  const s=recordGiftOut(initial,gift());
+  assert.equal(availability(initial,'bone'),5);
+  assert.equal(availability(s,'bone'),3);
+  assert.equal(s.giftOuts.length,1);
+  assert.equal(s.movements.at(-1).kind,'gift');
+  assert.throws(()=>recordGiftOut(s,gift()),error=>error.field==='id');
+  assert.throws(()=>recordGiftOut(s,gift({id:'g2',quantity:4})),error=>error.field==='quantity');
+});
+test('saída de brinde rejeita material que não é brinde e dados incompletos',()=>{
+  const s=createDemoState();
+  for(const [change,field] of [[{materialId:'cartolina'},'materialId'],[{materialId:'ausente'},'materialId'],
+    [{quantity:0},'quantity'],[{recipient:' '},'recipient'],[{operator:''},'operator'],[{at:'inválida'},'at']])
+    assert.throws(()=>recordGiftOut(s,gift(change)),error=>error.field===field,JSON.stringify(change));
 });

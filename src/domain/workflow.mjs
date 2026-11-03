@@ -1,4 +1,4 @@
-import {availability, availableUnits} from './inventory.mjs';
+import {availability, availableUnits, returnable} from './inventory.mjs';
 import {DomainError, requiredText, positiveInteger, validDate} from './validation.mjs';
 
 const fail = (field, message) => { throw new DomainError(field, message); };
@@ -15,12 +15,11 @@ const after = (at, earlier, field = 'at') => {
 export function requestMaterial(s, input) {
   const id = requiredText(input.id, 'id');
   if (s.requests.some(r => r.id === id)) fail('id', 'Esta solicitação já foi enviada.');
-  if (!s.students.some(student => student.id === input.studentId))
-    fail('studentId', 'Selecione uma pessoa fictícia válida.');
-  materialFor(s, input.materialId);
+  if (materialFor(s, input.materialId).category === 'gift')
+    fail('materialId', 'Brindes são entregues diretamente pela equipe e não podem ser solicitados.');
   const quantity = positiveInteger(input.quantity);
   if (quantity > availability(s, input.materialId)) fail('quantity', 'Quantidade maior que a disponível.');
-  const request = {id, studentId: input.studentId, materialId: input.materialId, quantity,
+  const request = {id, materialId: input.materialId, quantity,
     name: requiredText(input.name, 'name'), course: requiredText(input.course, 'course'),
     purpose: requiredText(input.purpose, 'purpose'), at: validDate(input.at)};
   const next = structuredClone(s);
@@ -52,9 +51,9 @@ export function recordPickup(s, input) {
   const operator = requiredText(input.operator, 'operator');
   const at = validDate(input.at);
   after(at, confirmation.at);
-  const dueAt = material.category === 'consumable' ? null : validDate(input.dueAt, 'dueAt');
+  const dueAt = returnable(material.category) ? validDate(input.dueAt, 'dueAt') : null;
   if (dueAt) after(dueAt, at, 'dueAt');
-  if (material.category === 'consumable' && input.dueAt)
+  if (!returnable(material.category) && input.dueAt)
     fail('dueAt', 'Materiais de consumo não têm previsão de devolução.');
   if (!Array.isArray(input.codes)) fail('codes', 'Selecione os códigos das unidades.');
   const codes = input.codes.map(code => requiredText(code, 'codes').toUpperCase());
@@ -72,7 +71,7 @@ export function recordPickup(s, input) {
 
 export function recordReturn(s, input) {
   const request = requestFor(s, input.requestId);
-  if (materialFor(s, request.materialId).category === 'consumable')
+  if (!returnable(materialFor(s, request.materialId).category))
     fail('requestId', 'Materiais de consumo não exigem devolução.');
   const pickup = s.pickups.find(p => p.requestId === request.id);
   if (!pickup) fail('requestId', 'Registre a retirada antes da devolução.');
@@ -95,6 +94,22 @@ export function requestStatus(s, id) {
   const request = requestFor(s, id);
   if (s.returns.some(r => r.requestId === id)) return 'returned';
   if (s.pickups.some(p => p.requestId === id))
-    return materialFor(s, request.materialId).category === 'consumable' ? 'completed' : 'loaned';
+    return returnable(materialFor(s, request.materialId).category) ? 'loaned' : 'completed';
   return s.confirmations.some(c => c.requestId === id) ? 'confirmed' : 'requested';
+}
+
+/** Saída direta de brinde pela equipe: não passa por solicitação e não tem devolução. */
+export function recordGiftOut(s, input) {
+  const id = requiredText(input.id, 'id');
+  if (s.giftOuts.some(g => g.id === id)) fail('id', 'Esta saída de brinde já foi registrada.');
+  const material = materialFor(s, input.materialId);
+  if (material.category !== 'gift') fail('materialId', 'Selecione um brinde.');
+  const quantity = positiveInteger(input.quantity);
+  if (quantity > availability(s, material.id)) fail('quantity', 'Quantidade maior que a disponível.');
+  const giftOut = {id, materialId: material.id, quantity, recipient: requiredText(input.recipient, 'recipient'),
+    operator: requiredText(input.operator, 'operator'), at: validDate(input.at), notes: String(input.notes ?? '').trim()};
+  const next = structuredClone(s);
+  next.giftOuts.push(giftOut);
+  next.movements.push({materialId: material.id, requestId: null, kind: 'gift', delta: -quantity});
+  return next;
 }
